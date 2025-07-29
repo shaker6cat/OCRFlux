@@ -672,23 +672,87 @@ async def vllm_server_host(args, semaphore):
         logger.error("Please make sure vllm is installed according to the latest instructions here: https://docs.vllm.ai/start/install.html")
         sys.exit(1)
 
+async def aget(url):
+    """A simple, proxy-ignorant async GET request."""
+    parsed_url = urlparse(url)
+    host = parsed_url.hostname
+    port = parsed_url.port or 80
+    path = parsed_url.path or "/"
+
+    writer = None
+    try:
+        reader, writer = await asyncio.open_connection(host, port)
+        request = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {host}\r\n"
+            f"Connection: close\r\n\r\n"
+        )
+        writer.write(request.encode())
+        await writer.drain()
+
+        status_line = await reader.readline()
+        if not status_line:
+            return -1  # Indicate connection error
+        return int(status_line.decode().strip().split(" ", 2)[1])
+    finally:
+        if writer is not None:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except:
+                pass
+
+async def aget(url):
+    """A simple, proxy-ignorant async GET request."""
+    parsed_url = urlparse(url)
+    host = parsed_url.hostname
+    port = parsed_url.port or 80
+    path = parsed_url.path or "/"
+
+    writer = None
+    try:
+        reader, writer = await asyncio.open_connection(host, port)
+        request = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {host}\r\n"
+            f"Connection: close\r\n\r\n"
+        )
+        writer.write(request.encode())
+        await writer.drain()
+
+        status_line = await reader.readline()
+        if not status_line:
+            return -1  # Indicate connection error
+        return int(status_line.decode().strip().split(" ", 2)[1])
+    finally:
+        if writer is not None:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except:
+                pass
+
 async def vllm_server_ready(args):
+    """
+    New version of vllm_server_ready that uses a direct, proxy-ignorant
+    connection instead of httpx.
+    """
     max_attempts = 300
     delay_sec = 1
     url = f"http://localhost:{args.port}/v1/models"
 
     for attempt in range(1, max_attempts + 1):
         try:
-            async with httpx.AsyncClient() as session:
-                response = await session.get(url)
+            # Use our new direct aget function
+            status_code = await aget(url)
 
-                if response.status_code == 200:
-                    logger.info("vllm server is ready.")
-                    return
-                else:
-                    logger.info(f"Attempt {attempt}: Unexpected status code {response.status_code}")
-        except Exception:
-            logger.warning(f"Attempt {attempt}: Please wait for vllm server to become ready...")
+            if status_code == 200:
+                logger.info("vllm server is ready.")
+                return
+            else:
+                logger.info(f"Attempt {attempt}: Unexpected status code {status_code}")
+        except Exception as e:
+            logger.warning(f"Attempt {attempt}: Please wait for vllm server to become ready... (Error: {e})")
 
         await asyncio.sleep(delay_sec)
 
