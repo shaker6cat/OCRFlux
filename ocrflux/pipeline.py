@@ -895,15 +895,16 @@ async def main():
     if qsize == 0:
         logger.info("No work to do, exiting")
         return
+    # 将vllm改为手动启动
     # Create a semaphore to control worker access
     # We only allow one worker to move forward with requests, until the server has no more requests in its queue
     # This lets us get full utilization by having many workers, but also to be outputting dolma docs as soon as possible
     # As soon as one worker is no longer saturating the gpu, the next one can start sending requests
     semaphore = asyncio.Semaphore(1)
 
-    vllm_server = asyncio.create_task(vllm_server_host(args, semaphore))
+    # vllm_server = asyncio.create_task(vllm_server_host(args, semaphore))  # <--- 注释掉这一行
 
-    await vllm_server_ready(args)
+    await vllm_server_ready(args) # 这一行非常关键，它会去检查您手动启动的服务
 
     metrics_task = asyncio.create_task(metrics_reporter(work_queue))
 
@@ -916,7 +917,7 @@ async def main():
     # Wait for all worker tasks to finish
     await asyncio.gather(*worker_tasks)
 
-    vllm_server.cancel()
+    # vllm_server.cancel()  # <--- 同时注释掉这一行，因为 vllm_server 变量已不存在
     metrics_task.cancel()
     logger.info("Work done")
 
